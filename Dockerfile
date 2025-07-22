@@ -1,12 +1,14 @@
 # Use Python 3.13.1 slim image as base
-FROM python:3.13.1-slim
+FROM python:3.13.1-slim:bullseye
 
 # Set working directory in container
 WORKDIR /app
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies
 RUN apt-get update \
@@ -35,5 +37,5 @@ USER appuser
 EXPOSE 8080
 
 # Command to run the application
-# Use PORT environment variable with fallback to 8000 for local development
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Cloud Run sets PORT environment variable, defaulting to 8080
+CMD exec uvicorn run:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1
