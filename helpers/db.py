@@ -1,7 +1,10 @@
 """Database helper module for MongoDB connections."""
 
 import os
+from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
+
+load_dotenv()
 
 MONGODB_URI = os.getenv("MONGODB_URI")
 

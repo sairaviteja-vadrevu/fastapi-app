@@ -1,12 +1,9 @@
 """FastAPI App"""
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.movies import router as movies_router
-
-
-load_dotenv()
+from routes.insta_scraper import router as insta_scraper_router
 
 app = FastAPI(
     title="FastAPI App",
@@ -25,6 +22,7 @@ app.add_middleware(
 
 # Include the routes
 app.include_router(movies_router, prefix="/api/v1", tags=["movies"])
+app.include_router(insta_scraper_router, prefix="/api/v1", tags=["instagram"])
 
 
 @app.get("/")
