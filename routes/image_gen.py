@@ -1,0 +1,189 @@
+"""Image generation route."""
+
+import os
+from datetime import datetime
+from typing import List, Optional
+import replicate
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from helpers.db import get_database
+
+load_dotenv()
+
+router = APIRouter()
+
+REPLICATE_API_KEY = os.getenv("REPLICATE_API_KEY")
+
+# Set the API key for replicate
+if REPLICATE_API_KEY:
+    os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_KEY
+
+db = get_database("images_gen")
+
+
+class ImageGenerationRequest(BaseModel):
+    """Model for image generation request."""
+
+    prompt: str
+    input_image: str = None
+    output_format: str = "jpg"
+
+
+class Gen4ImageRequest(BaseModel):
+    """Model for Gen4 image generation request."""
+
+    prompt: str
+    aspect_ratio: str = "4:3"
+    reference_tags: Optional[List[str]] = None
+    reference_images: Optional[List[str]] = None
+
+
+def extract_url_from_output(output):
+    """Extract URL string from various output types."""
+    try:
+        # Check if it's a FileOutput object
+        if hasattr(output, "url"):
+            return str(output.url)
+
+        # Check if it's already a string
+        if isinstance(output, str):
+            return output
+
+        # Check if it's a list
+        if isinstance(output, list) and len(output) > 0:
+            first_item = output[0]
+            if hasattr(first_item, "url"):
+                return str(first_item.url)
+            else:
+                return str(first_item)
+
+        # Fallback
+        return str(output)
+
+    except (AttributeError, TypeError, IndexError, ValueError) as e:
+        print(f"Error extracting URL: {e}")
+        return str(output)
+
+
+@router.post("/generate")
+async def generate_image(request: ImageGenerationRequest):
+    """Generate an image based on the provided prompt using Flux Kontext Pro."""
+    try:
+        if not REPLICATE_API_KEY:
+            raise HTTPException(
+                status_code=500,
+                detail="REPLICATE_API_KEY is not set in the environment variables.",
+            )
+
+        print("Generating image with Flux Kontext Pro...")
+
+        # Prepare input for replicate
+        input_data = {"prompt": request.prompt, "output_format": request.output_format}
+
+        # Only include input_image if provided
+        if request.input_image:
+            input_data["input_image"] = request.input_image
+
+        print(f"Input data: {input_data}")
+
+        # Run the model using replicate.run()
+        output = replicate.run("black-forest-labs/flux-kontext-pro", input=input_data)
+
+        print(f"Output: {output}")
+
+        # Extract URL from output
+        output_url = extract_url_from_output(output)
+
+        print(f"Final output URL: {output_url}")
+
+        # Store the generated image data in MongoDB
+        image_data = {
+            "prompt": request.prompt,
+            "input_image": request.input_image,
+            "output_format": request.output_format,
+            "output_url": output_url,
+            "model": "black-forest-labs/flux-kontext-pro",
+            "created_at": datetime.utcnow(),
+            "status": "completed",
+        }
+
+        result = await db.images.insert_one(image_data)
+
+        return {
+            "image_url": output_url,
+            "message": "Image generated successfully with Flux Kontext Pro",
+            "success": True,
+            "id": str(result.inserted_id),
+        }
+
+    except replicate.exceptions.ReplicateError as e:
+        return {
+            "message": f"Replicate API error: {str(e)}",
+            "success": False,
+            "status_code": 500,
+        }
+
+
+@router.post("/generate-gen4")
+async def generate_gen4_image(request: Gen4ImageRequest):
+    """Generate an image using RunwayML Gen4 Image model."""
+    try:
+        if not REPLICATE_API_KEY:
+            raise HTTPException(
+                status_code=500,
+                detail="REPLICATE_API_KEY is not set in the environment variables.",
+            )
+
+        print("Generating image with RunwayML Gen4...")
+
+        # Prepare input for replicate
+        input_data = {"prompt": request.prompt, "aspect_ratio": request.aspect_ratio}
+
+        # Only include reference_tags if provided
+        if request.reference_tags:
+            input_data["reference_tags"] = request.reference_tags
+
+        # Only include reference_images if provided
+        if request.reference_images:
+            input_data["reference_images"] = request.reference_images
+
+        print(f"Input data: {input_data}")
+
+        # Run the model using replicate.run()
+        output = replicate.run("runwayml/gen4-image", input=input_data)
+
+        print(f"Output: {output}")
+
+        # Extract URL from output
+        output_url = extract_url_from_output(output)
+
+        print(f"Final output URL: {output_url}")
+
+        # Store the generated image data in MongoDB
+        image_data = {
+            "prompt": request.prompt,
+            "aspect_ratio": request.aspect_ratio,
+            "reference_tags": request.reference_tags,
+            "reference_images": request.reference_images,
+            "output_url": output_url,
+            "model": "runwayml/gen4-image",
+            "created_at": datetime.utcnow(),
+            "status": "completed",
+        }
+
+        result = await db.images.insert_one(image_data)
+
+        return {
+            "image_url": output_url,
+            "message": "Image generated successfully with RunwayML Gen4",
+            "success": True,
+            "id": str(result.inserted_id),
+        }
+
+    except replicate.exceptions.ReplicateError as e:
+        return {
+            "message": f"Replicate API error: {str(e)}",
+            "success": False,
+            "status_code": 500,
+        }

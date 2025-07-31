@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.movies import router as movies_router
 from routes.insta_scraper import router as insta_scraper_router
+from routes.image_gen import router as image_gen_router
 
 app = FastAPI(
     title="FastAPI App",
@@ -23,6 +24,7 @@ app.add_middleware(
 # Include the routes
 app.include_router(movies_router, prefix="/api/v1", tags=["movies"])
 app.include_router(insta_scraper_router, prefix="/api/v1", tags=["instagram"])
+app.include_router(image_gen_router, prefix="/api/v1", tags=["image_generation"])
 
 
 @app.get("/")
