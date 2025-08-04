@@ -28,6 +28,7 @@ class ImageGenerationRequest(BaseModel):
     prompt: str
     input_image: str = None
     output_format: str = "jpg"
+    aspect_ratio: str = "4:3"
 
 
 class Gen4ImageRequest(BaseModel):
@@ -80,6 +81,10 @@ async def generate_image(request: ImageGenerationRequest):
 
         # Prepare input for replicate
         input_data = {"prompt": request.prompt, "output_format": request.output_format}
+
+        # Only include aspect_ratio if provided
+        if request.aspect_ratio:
+            input_data["aspect_ratio"] = request.aspect_ratio
 
         # Only include input_image if provided
         if request.input_image:
