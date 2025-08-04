@@ -6,6 +6,7 @@ from typing import List, Optional
 import replicate
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
 from helpers.db import get_database
 
@@ -189,6 +190,30 @@ async def generate_gen4_image(request: Gen4ImageRequest):
     except replicate.exceptions.ReplicateError as e:
         return {
             "message": f"Replicate API error: {str(e)}",
+            "success": False,
+            "status_code": 500,
+        }
+
+
+@router.get("/generations")
+async def get_image_generations():
+    """Retrieve all image generations from the database."""
+    try:
+        generations = await db.images.find(
+            {}, {"_id": 0, "output_url": 1, "created_at": 1}
+        ).to_list(length=None)
+        if not generations:
+            return {
+                "message": "No image generations found.",
+                "success": True,
+                "generations": [],
+            }
+        # Return the list of generations
+        generations.sort(key=lambda x: x["created_at"], reverse=True)
+        return {"generations": generations, "success": True}
+    except PyMongoError as e:
+        return {
+            "message": f"Error retrieving image generations: {str(e)}",
             "success": False,
             "status_code": 500,
         }
