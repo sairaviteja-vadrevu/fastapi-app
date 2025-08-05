@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
+from bson import ObjectId
 from helpers.db import get_database
 
 load_dotenv()
@@ -81,7 +82,12 @@ async def generate_image(request: ImageGenerationRequest):
         print("Generating image with Flux Kontext Pro...")
 
         # Prepare input for replicate
-        input_data = {"prompt": request.prompt, "output_format": request.output_format}
+        input_data = {
+            "prompt": request.prompt,
+            "output_format": request.output_format,
+            "safety_tolerance": 2,
+            "prompt_upsampling": False,
+        }
 
         # Only include aspect_ratio if provided
         if request.aspect_ratio:
@@ -94,7 +100,10 @@ async def generate_image(request: ImageGenerationRequest):
         print(f"Input data: {input_data}")
 
         # Run the model using replicate.run()
-        output = replicate.run("black-forest-labs/flux-kontext-pro", input=input_data)
+        # output = replicate.run("black-forest-labs/flux-kontext-pro", input=input_data)
+        output = replicate.run("black-forest-labs/flux-kontext-max", input=input_data)
+        # Note: Using flux-kontext-max for better performance
+        # You can switch back to flux-kontext-pro if needed
 
         print(f"Output: {output}")
 
@@ -200,7 +209,7 @@ async def get_image_generations():
     """Retrieve all image generations from the database."""
     try:
         generations = await db.images.find(
-            {}, {"_id": 0, "output_url": 1, "created_at": 1}
+            {}, {"_id": 1, "output_url": 1, "created_at": 1}
         ).to_list(length=None)
         if not generations:
             return {
@@ -208,12 +217,37 @@ async def get_image_generations():
                 "success": True,
                 "generations": [],
             }
+
+        # Convert ObjectId to string and format the created_at field
+        for generation in generations:
+            generation["_id"] = str(generation["_id"])
+
         # Return the list of generations
         generations.sort(key=lambda x: x["created_at"], reverse=True)
         return {"generations": generations, "success": True}
     except PyMongoError as e:
         return {
             "message": f"Error retrieving image generations: {str(e)}",
+            "success": False,
+            "status_code": 500,
+        }
+
+
+@router.get("/delete/{generation_id}")
+async def delete_image_generation(generation_id: str):
+    """Delete an image generation by ID."""
+    try:
+        object_id = ObjectId(generation_id)
+        result = await db.images.delete_one({"_id": object_id})
+
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Image generation not found.")
+
+        return {"message": "Image generation deleted successfully.", "success": True}
+
+    except PyMongoError as e:
+        return {
+            "message": f"Error deleting image generation: {str(e)}",
             "success": False,
             "status_code": 500,
         }
