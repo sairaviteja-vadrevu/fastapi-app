@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 import replicate
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -33,13 +33,21 @@ class ImageGenerationRequest(BaseModel):
     aspect_ratio: str = "4:3"
 
 
+class GoogleImageRequest(BaseModel):
+    """Model for Google image generation request."""
+
+    prompt: str
+    input_image: Optional[str] = None
+    output_format: str = "jpg"
+    aspect_ratio: str = "4:3"
+
+
 class Gen4ImageRequest(BaseModel):
     """Model for Gen4 image generation request."""
 
     prompt: str
     aspect_ratio: str = "4:3"
-    reference_tags: Optional[List[str]] = None
-    reference_images: Optional[List[str]] = None
+    output_format: str = "jpg"
 
 
 def extract_url_from_output(output):
@@ -132,6 +140,64 @@ async def generate_image(request: ImageGenerationRequest):
             "id": str(result.inserted_id),
         }
 
+    except replicate.exceptions.ReplicateError as e:
+        return {
+            "message": f"Replicate API error: {str(e)}",
+            "success": False,
+            "status_code": 500,
+        }
+
+
+@router.post("/google-generate")
+async def generate_google_image(request: GoogleImageRequest):
+    """Generate an image using Google Imagen model."""
+    try:
+        if not REPLICATE_API_KEY:
+            raise HTTPException(
+                status_code=500,
+                detail="REPLICATE_API_KEY is not set in the environment variables.",
+            )
+
+        print("Generating image with Google Imagen 4...")
+
+        # Prepare input for replicate
+        input_data = {
+            "prompt": request.prompt,
+            "output_format": request.output_format,
+            "aspect_ratio": request.aspect_ratio,
+        }
+
+        print(f"Input data: {input_data}")
+
+        # Run the model using replicate.run()
+        output = replicate.run("google/imagen-4", input=input_data)
+
+        print(f"Output: {output}")
+
+        # Extract URL from output
+        output_url = extract_url_from_output(output)
+
+        print(f"Final output URL: {output_url}")
+
+        # Store the generated image data in MongoDB
+        image_data = {
+            "prompt": request.prompt,
+            "output_format": request.output_format,
+            "aspect_ratio": request.aspect_ratio,
+            "output_url": output_url,
+            "model": "google/imagen",
+            "created_at": datetime.utcnow(),
+            "status": "completed",
+        }
+
+        result = await db.images.insert_one(image_data)
+
+        return {
+            "image_url": output_url,
+            "message": "Image generated successfully with Google Imagen",
+            "success": True,
+            "id": str(result.inserted_id),
+        }
     except replicate.exceptions.ReplicateError as e:
         return {
             "message": f"Replicate API error: {str(e)}",
